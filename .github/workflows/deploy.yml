@@ -1,0 +1,151 @@
+# Pipeline dla quotes-api: lint → test → build (ECR) → deploy (EKS, dzień 1).
+# Lint i testy działają także na pull requestach; build i deploy tylko po pushu do main.
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/deploy.yml"
+  pull_request:
+    paths:
+      - "app/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+# Deny by default: token GitHuba nie ma żadnych uprawnień, dopóki job ich jawnie nie dostanie.
+permissions: {}
+
+env:
+  AWS_REGION: eu-central-1
+  ECR_REPOSITORY: quotes-api
+  EKS_CLUSTER: szkolenie-ai-devops
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # contents: read — wyłącznie actions/checkout. Ruff czyta pliki lokalnie, nie pisze do repo
+    # i nie rozmawia z AWS, więc nie potrzebuje nic więcej.
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: app/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+
+  test:
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # contents: read — jak w lint: checkout i uruchomienie pytest lokalnie na runnerze.
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: app/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - run: pytest
+
+  build:
+    needs: test
+    # Tylko push (lub ręczne uruchomienie) na main — PR, także z forka, nigdy nie wypycha obrazu.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # contents: read — checkout Dockerfile i kodu aplikacji.
+    # id-token: write — prośba o token OIDC, który configure-aws-credentials wymienia na
+    #   krótkotrwałe poświadczenia roli AWS_DEPLOY_ROLE_ARN (push do ECR). Nie daje zapisu do repo.
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image: ${{ steps.obraz.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          # Adres obrazu zawiera ID konta; zamaskowany output joba GitHub by pominął
+          # i deploy dostałby pusty obraz.
+          mask-aws-account-id: false
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Rejestr jest wspólny dla grupy — tag z prefiksem namespace'u, żeby nie nadpisać cudzego obrazu.
+      # SHA commita w tagu i w APP_VERSION: wiadomo dokładnie, który commit działa na klastrze.
+      - id: obraz
+        env:
+          IMAGE: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ vars.K8S_NAMESPACE }}-${{ github.sha }}
+        run: |
+          docker build --build-arg "APP_VERSION=${GITHUB_SHA::7}" -t "$IMAGE" app/
+          docker push "$IMAGE"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Dwa wdrożenia naraz do tego samego namespace'u się ścigają — kolejne czeka na poprzednie.
+    concurrency:
+      group: deploy-${{ vars.K8S_NAMESPACE }}
+      cancel-in-progress: false
+    # contents: read — checkout manifestów z app/k8s-dzien1/.
+    # id-token: write — OIDC do AWS, żeby pobrać kubeconfig EKS (aws eks update-kubeconfig)
+    #   i uwierzytelnić kubectl. Co wolno w klastrze, decyduje rola IAM i RBAC namespace'u.
+    # Bez `environment:` — zmieniłby claim `sub` w tokenie OIDC i trust policy roli by go odrzuciła.
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      NAMESPACE: ${{ vars.K8S_NAMESPACE }}
+      IMAGE: ${{ needs.build.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sprawdź zmienne wejściowe
+        run: |
+          : "${NAMESPACE:?Brak zmiennej repozytorium K8S_NAMESPACE (gh variable set K8S_NAMESPACE)}"
+          : "${IMAGE:?Job build nie przekazał adresu obrazu}"
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - run: aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION"
+
+      - name: Wdróż manifesty z app/k8s-dzien1/
+        run: |
+          sed "s|PODMIEN_NA_OBRAZ|${IMAGE}|" app/k8s-dzien1/deployment.yaml \
+            | kubectl apply -n "$NAMESPACE" -f -
+          kubectl apply -n "$NAMESPACE" -f app/k8s-dzien1/service.yaml
+
+      - name: Poczekaj na gotowość Deploymentu
+        run: kubectl rollout status deployment/quotes-api-d1 -n "$NAMESPACE" --timeout=180s
+
+      - name: Diagnostyka po nieudanym wdrożeniu
+        if: failure()
+        run: |
+          kubectl get deploy,pods -n "$NAMESPACE" -l app=quotes-api-d1 || true
+          kubectl describe pods -n "$NAMESPACE" -l app=quotes-api-d1 | tail -n 40 || true
