@@ -19,7 +19,9 @@ permissions: {}
 
 env:
   AWS_REGION: eu-central-1
-  ECR_REPOSITORY: quotes-api
+  # Własne repozytorium ECR uczestnika (quotes-api-<login>, login = K8S_NAMESPACE),
+  # nie wspólne quotes-api z dnia 2.
+  ECR_REPOSITORY: quotes-api-${{ vars.K8S_NAMESPACE }}
   EKS_CLUSTER: szkolenie-ai-devops
 
 jobs:
@@ -91,7 +93,6 @@ jobs:
       - id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Rejestr jest wspólny dla grupy — tag z prefiksem namespace'u, żeby nie nadpisać cudzego obrazu.
       # SHA commita w tagu i w APP_VERSION: wiadomo dokładnie, który commit działa na klastrze.
       - id: obraz
         env:

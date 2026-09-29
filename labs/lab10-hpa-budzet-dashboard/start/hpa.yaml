@@ -1,4 +1,6 @@
-# Konfiguracja wyjściowa — celowo ustawiona źle.
+# HPA dla quotes-api: CPU 60%, 2–10 replik.
+# `scaleTargetRef` wskazuje na Rollout, nie na Deployment — Argo Rollouts implementuje
+# subresource `scale`, więc HPA działa tak samo.
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -9,8 +11,13 @@ spec:
     kind: Rollout
     name: quotes-api
 
-  minReplicas: 1
-  maxReplicas: 3
+  # Dwie repliki minimum: jedna padnięta nie zabiera całego ruchu, a druga daje zapas
+  # na pierwsze ~60 s skoku, zanim HPA dołoży kolejne.
+  minReplicas: 2
+  # Uwaga na quotę `pods: 20`: przy canary z pełną wagą 10 stable + 10 canary + flagd = 21.
+  # Pod obciążeniem bez canary mieści się; podczas wdrożenia canary część podów zostanie
+  # odrzucona przez quotę. app/k8s/hpa.yaml używa z tego powodu 8.
+  maxReplicas: 10
 
   metrics:
     - type: Resource
@@ -18,4 +25,22 @@ spec:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 90
+          # Procent liczony względem requests.cpu (100m w rollout.yaml), nie limits.
+          averageUtilization: 60
+
+  behavior:
+    scaleUp:
+      # Bez okna stabilizacji — reagujemy na pierwszy odczyt powyżej progu.
+      stabilizationWindowSeconds: 0
+      # Co 15 s wolno podwoić liczbę replik albo dodać 4, cokolwiek większe.
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+      selectPolicy: Max
+    scaleDown:
+      # Pięć minut, żeby nie zdejmować replik przy chwilowym spadku ruchu.
+      stabilizationWindowSeconds: 300

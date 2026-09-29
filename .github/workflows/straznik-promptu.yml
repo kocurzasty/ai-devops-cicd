@@ -1,0 +1,32 @@
+# Przykład użycia strażnika: plik z promptem z repozytorium → strażnik → (tu) model.
+# W prawdziwym pipeline krok „Wyślij do modelu" stoi zaraz po strażniku, w tym samym jobie,
+# więc odrzucony prompt nigdy nie opuszcza runnera.
+name: straznik-promptu
+
+on:
+  workflow_dispatch:
+    inputs:
+      plik-promptu:
+        description: Ścieżka do pliku z promptem w repozytorium
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  sprawdz-prompt:
+    runs-on: ubuntu-latest
+    # 20 minut: pierwsze pobranie modelu PromptInjection, potem z cache ~2 minuty.
+    timeout-minutes: 20
+    # contents: read — wyłącznie checkout. Strażnik działa lokalnie na runnerze.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/straznik-promptu
+        with:
+          plik-promptu: ${{ inputs.plik-promptu }}
+
+      - name: Wyślij do modelu
+        run: echo "Prompt przeszedł kontrolę — tu wywołanie modelu."

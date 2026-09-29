@@ -7,6 +7,9 @@
 
 Kod wyjścia 0 = przepuszczone, 1 = odrzucone. Dzięki temu wpina się jako krok w pipeline.
 
+To kopia używana przez akcję `.github/actions/straznik-promptu`. Wersja ćwiczeniowa
+w `labs/lab09-llm-firewall/start/` żyje osobno — zmiany wzorców wprowadzaj tutaj.
+
 Tryb domyślny używa wyłącznie skanerów regułowych — działają natychmiast i nie pobierają
 modeli. Tryb `--pelny` dokłada `PromptInjection`, który pobiera model z Hugging Face
 (kilkaset MB przy pierwszym uruchomieniu). Na szkoleniu uruchom go raz przed blokiem,
