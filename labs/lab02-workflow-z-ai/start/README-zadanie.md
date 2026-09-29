@@ -5,10 +5,13 @@ Uzupełnij przed rozpoczęciem — wartości dostaniesz od prowadzącego.
 | Co | Gdzie to jest | Wartość |
 |---|---|---|
 | Rola OIDC do AWS | zmienna repozytorium `AWS_DEPLOY_ROLE_ARN` | `arn:aws:iam::<KONTO>:role/github-actions-deploy` |
-| Repozytorium ECR | nazwa w workflow; adres rejestru zwraca akcja `aws-actions/amazon-ecr-login` | `quotes-api` (pełny adres masz w `.env` jako `ECR_REPO` — zmienna repozytorium nie jest potrzebna) |
+| Twoje repozytorium ECR | nazwa w workflow; adres rejestru zwraca akcja `aws-actions/amazon-ecr-login` | `quotes-api-<Twój login>`, czyli `quotes-api-$UCZESTNIK` — już istnieje, nie twórz go. W workflow: `IMAGE_NAME: quotes-api-${{ vars.K8S_NAMESPACE }}` |
 | Region | — | `eu-central-1` |
 | Twój namespace | zmienna repozytorium `K8S_NAMESPACE` | = `UCZESTNIK` z `.env` |
 | Manifesty do wdrożenia | `app/k8s-dzien1/` | `Deployment` i `Service` `quotes-api-d1` |
+
+**Uwaga:** `ECR_REPO` z `.env` wskazuje wspólne repozytorium `quotes-api` (dzień 2). W lab02 go **nie używaj** —
+wypchnięcie tam nadpisze tag `staging` innym uczestnikom, a obraz może zostać skasowany przez politykę czyszczenia.
 
 Rola `github-actions-deploy` przyjmuje tokeny tylko z repozytoriów zgłoszonych prowadzącemu
 (`setup/README.md`, punkt 1). Błąd `Not authorized to perform sts:AssumeRoleWithWebIdentity`

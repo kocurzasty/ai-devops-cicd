@@ -8,7 +8,8 @@ Napisz .github/workflows/deploy.yml dla aplikacji z katalogu app/.
 Joby, w tej kolejności:
 1. lint — ruff check
 2. test — pytest
-3. build — zbuduj obraz z app/Dockerfile i wypchnij do ECR
+3. build — zbuduj obraz z app/Dockerfile i wypchnij do ECR, do repozytorium
+   quotes-api-<wartość zmiennej repozytorium K8S_NAMESPACE> (każdy uczestnik ma własne)
 4. deploy — wdróż na EKS manifesty z app/k8s-dzien1/ (zwykły Deployment i Service,
    bez Argo Rollouts) z obrazem zbudowanym w jobie build, w namespace ze zmiennej
    repozytorium K8S_NAMESPACE, i poczekaj, aż Deployment będzie gotowy

@@ -36,7 +36,7 @@ bez ruchu nie będzie czego mierzyć:
 
 ```bash
 set -a; source .env; set +a
-./scripts/obciaz.sh $UCZESTNIK
+./scripts/obciaz.sh $UCZESTNIK 1800    # 30 min; bez liczby skończy się po 5 min, w trakcie analizy
 ```
 
 ### Etap 2 — canary (10 min)

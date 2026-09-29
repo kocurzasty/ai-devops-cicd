@@ -83,6 +83,19 @@ gh repo set-default --view                         # ma pokazać Twój fork
 Jeśli w trakcie szkolenia prowadzący poprawi materiały, pobierzesz zmiany poleceniem
 `git pull upstream main`.
 
+**Błąd „You have divergent branches and need to specify how to reconcile them”.**
+Pojawia się, gdy masz już własne commity (np. rozwiązania zadań), a na `upstream/main`
+są nowe commity prowadzącego. To nie błąd — git od wersji 2.x wymaga wskazania strategii.
+Wybierz merge, nie rebase, żeby nie przepisywać własnej historii:
+
+```bash
+git config pull.rebase false   # raz na cały czas trwania szkolenia
+git pull upstream main
+```
+
+Materiały labów (pliki, których nie edytujesz) i Twoje rozwiązania leżą w różnych
+plikach, więc taki merge z reguły przechodzi bez konfliktów.
+
 Bez `gh`: na stronie https://github.com/dawid-marniok/ai-devops-cicd kliknij **Fork**,
 a potem `git clone https://github.com/<twój-login>/ai-devops-cicd.git`.
 

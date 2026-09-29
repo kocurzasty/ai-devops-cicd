@@ -38,6 +38,7 @@ jest wspólny dla całego repozytorium, nie dla pojedynczego labu ani użytkowni
 - [ ] `timeout-minutes` na każdym jobie
 - [ ] uwierzytelnianie do AWS przez OIDC, **zero kluczy w sekretach**
 - [ ] akcje przypięte do wersji (`@v4`), nie do `@main`
+- [ ] obraz trafia do **Twojego** repozytorium ECR `quotes-api-<login>` (nazwa z `vars.K8S_NAMESPACE`), nie do wspólnego `quotes-api`
 - [ ] build, push i deploy tylko z gałęzi `main`
 - [ ] deploy stosuje manifesty z `app/k8s-dzien1/` w namespace z `vars.K8S_NAMESPACE`
       i czeka, aż Deployment będzie gotowy
@@ -92,6 +93,7 @@ Koniec logu to prawie zawsze `Process completed with exit code 1`, czyli informa
 | `Forbidden ... in the namespace "default"` albo pusty `-n` | brak zmiennej `K8S_NAMESPACE` w repo |
 | `the server doesn't have a resource type "rollouts"` / `rollouts.argoproj.io "quotes-api" not found` | agent użył Rollout zamiast manifestów z `app/k8s-dzien1/` |
 | `ImagePullBackOff`, `rollout status` kończy się timeoutem | w manifeście został `PODMIEN_NA_OBRAZ` albo zły adres obrazu |
+| `name unknown: The repository with name 'quotes-api-...' does not exist` albo `denied` przy pushu | zła nazwa obrazu: ma być `quotes-api-` + login (`vars.K8S_NAMESPACE`); brak zmiennej daje `quotes-api-` bez loginu |
 | `Not authorized to perform sts:AssumeRoleWithWebIdentity` | job ma `environment:` (zmienia tożsamość w tokenie OIDC — usuń) albo Twojego forka nie ma jeszcze na liście prowadzącego — zgłoś to |
 </details>
 
