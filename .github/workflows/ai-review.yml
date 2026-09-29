@@ -1,0 +1,87 @@
+# Recenzja AI publikowana jako komentarz w pull requeście.
+#
+# Uwaga na wyzwalacz: `pull_request`, nie `pull_request_target`. Ten drugi ma dostęp
+# do sekretów także dla PR z forków — i dlatego jest regularnym źródłem wycieków.
+name: ai-review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions: {}
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write # tylko tyle, ile trzeba, żeby dodać komentarz
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Przygotuj diff
+        id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Pliki wygenerowane i blokady zależności tylko zaśmiecają kontekst.
+          git diff "$BASE" "$HEAD" -- . \
+            ':(exclude)*.lock' ':(exclude)**/package-lock.json' \
+            ':(exclude)docs/**' > /tmp/pr.diff
+
+          ROZMIAR=$(wc -c < /tmp/pr.diff)
+          echo "rozmiar=$ROZMIAR" >> "$GITHUB_OUTPUT"
+          echo "Diff ma $ROZMIAR bajtów."
+
+      # Bardzo duży diff to zwykle zmiana masowa (formatowanie, migracja).
+      # Recenzja takiego diffu kosztuje dużo i nie wnosi nic.
+      - name: Pomiń zbyt duży diff
+        if: steps.diff.outputs.rozmiar > 200000
+        run: |
+          echo "Diff powyżej 200 kB — recenzja pominięta." >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+
+      - name: Zainstaluj Claude Code
+        if: steps.diff.outputs.rozmiar <= 200000
+        run: curl -fsSL https://claude.ai/install.sh | bash
+
+      - name: Recenzja
+        if: steps.diff.outputs.rozmiar <= 200000
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          claude -p "$(cat <<'PROMPT'
+          Zrecenzuj załączony diff. Odpowiedz w Markdownie gotowym do wklejenia jako komentarz
+          w pull requeście:
+
+          - nagłówek z jednozdaniowym werdyktem
+          - maksymalnie 5 najpoważniejszych znalezisk, każde jako: plik:linia, problem, poprawka
+          - jeśli nie ma nic poważnego, napisz krótko, że nie ma — nie wypełniaj miejsca
+            uwagami stylistycznymi
+
+          Nie komentuj plików wygenerowanych ani zmian w dokumentacji.
+          PROMPT
+          )
+
+          Diff:
+          $(cat /tmp/pr.diff)" > /tmp/recenzja.md
+
+      - name: Opublikuj komentarz
+        if: steps.diff.outputs.rozmiar <= 200000
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "## Recenzja AI"
+            echo
+            cat /tmp/recenzja.md
+            echo
+            echo "---"
+            echo "_Recenzja automatyczna. Nie zastępuje recenzenta, tylko go poprzedza._"
+          } > /tmp/komentarz.md
+
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/komentarz.md
